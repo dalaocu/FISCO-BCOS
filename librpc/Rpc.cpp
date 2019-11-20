@@ -1140,7 +1140,6 @@ Json::Value Rpc::submitTransactions(int _groupID, const std::string& _rlp)
         if (!block2)
             BOOST_THROW_EXCEPTION(JsonRpcException(
                 RPCExceptionType::BlockNumberT, RPCMsg[RPCExceptionType::BlockNumberT]));
-
         response["number"] = toJS(number);
         response["hash"] = toJS(block2->headerHash());
         response["parentHash"] = toJS(block2->header().parentHash());
