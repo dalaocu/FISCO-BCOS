@@ -24,6 +24,7 @@
 #include "TxPool.h"
 #include <libdevcore/Common.h>
 #include <libethcore/Exceptions.h>
+#include <libethcore/PartiallyBlock.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_invoke.h>
 
@@ -43,10 +44,22 @@ std::pair<h256, Address> TxPool::submit(Transaction::Ptr _tx)
         ImportResult verifyRet = ImportResult::NotBelongToTheGroup;
         if (isSealerOrObserver())
         {
-            verifyRet = import(_tx);
-            if (ImportResult::Success == verifyRet)
+            // check sync status failed
+            if (m_syncStatusChecker && !m_syncStatusChecker())
             {
-                return;
+                TXPOOL_LOG(WARNING)
+                    << LOG_DESC("submitTransaction async failed for checkSyncStatus failed")
+                    << LOG_KV("groupId", m_groupId);
+                verifyRet = ImportResult::TransactionRefused;
+            }
+            // check sync status succ
+            else
+            {
+                verifyRet = import(_tx);
+                if (ImportResult::Success == verifyRet)
+                {
+                    return;
+                }
             }
         }
         notifyReceipt(_tx, verifyRet);
@@ -776,5 +789,38 @@ std::shared_ptr<std::vector<dev::h256>> TxPool::filterUnknownTxs(
     return unknownTxs;
 }
 
+// init the PartiallyBlock
+bool TxPool::initPartiallyBlock(dev::eth::Block::Ptr _block)
+{
+    PartiallyBlock::Ptr partiallyBlock = std::dynamic_pointer_cast<PartiallyBlock>(_block);
+    assert(partiallyBlock);
+    auto txsHash = partiallyBlock->txsHash();
+    auto transactions = partiallyBlock->transactions();
+    auto missedTxs = partiallyBlock->missedTxs();
+    // fetch all the hitted transactions
+    {
+        ReadGuard l(m_lock);
+        int64_t index = 0;
+        for (auto const& hash : *txsHash)
+        {
+            if (m_txsHash.count(hash))
+            {
+                (*transactions)[index] = *(m_txsHash[hash]);
+            }
+            else
+            {
+                missedTxs->push_back(std::make_pair(hash, index));
+            }
+            index++;
+        }
+    }
+    // missed some transactions
+    if (missedTxs->size() > 0)
+    {
+        return false;
+    }
+    // hit all the transactions
+    return true;
+}
 }  // namespace txpool
 }  // namespace dev

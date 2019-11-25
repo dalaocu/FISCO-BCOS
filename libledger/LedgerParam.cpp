@@ -206,12 +206,37 @@ void LedgerParam::initConsensusIniConfig(ptree const& pt)
     {
         mutableConsensusParam().blockSizeIncreaseRatio = 0.5;
     }
+    // set enableTTLOptimize
+    if (g_BCOSConfig.version() >= V2_2_0)
+    {
+        mutableConsensusParam().enableTTLOptimize =
+            pt.get<bool>("consensus.enable_ttl_optimization", true);
+    }
+    else
+    {
+        mutableConsensusParam().enableTTLOptimize =
+            pt.get<bool>("consensus.enable_ttl_optimization", false);
+    }
+
+    // set enableTxsWithTxsHash
+    if (g_BCOSConfig.version() >= V2_2_0)
+    {
+        mutableConsensusParam().enablePrepareWithTxsHash =
+            pt.get<bool>("consensus.enable_prepare_with_txsHash", true);
+    }
+    else
+    {
+        mutableConsensusParam().enablePrepareWithTxsHash =
+            pt.get<bool>("consensus.enable_prepare_with_txsHash", true);
+    }
     LedgerParam_LOG(DEBUG)
         << LOG_BADGE("initConsensusIniConfig")
         << LOG_KV("maxTTL", std::to_string(mutableConsensusParam().maxTTL))
         << LOG_KV("minBlockGenerationTime", mutableConsensusParam().minBlockGenTime)
         << LOG_KV("enablDynamicBlockSize", mutableConsensusParam().enableDynamicBlockSize)
-        << LOG_KV("blockSizeIncreaseRatio", mutableConsensusParam().blockSizeIncreaseRatio);
+        << LOG_KV("blockSizeIncreaseRatio", mutableConsensusParam().blockSizeIncreaseRatio)
+        << LOG_KV("enableTTLOptimize", mutableConsensusParam().enableTTLOptimize)
+        << LOG_KV("enablePrepareWithTxsHash", mutableConsensusParam().enablePrepareWithTxsHash);
 }
 
 
@@ -296,8 +321,7 @@ void LedgerParam::initSyncConfig(ptree const& pt)
 
     LedgerParam_LOG(DEBUG) << LOG_BADGE("initSyncConfig")
                            << LOG_KV("idleWaitMs", mutableSyncParam().idleWaitMs);
-    mutableSyncParam().enableSendBlockStatusByTree =
-        pt.get<bool>("sync.send_block_status_by_tree", true);
+    mutableSyncParam().enableSendBlockStatusByTree = pt.get<bool>("sync.sync_by_tree", true);
     LedgerParam_LOG(DEBUG) << LOG_BADGE("initSyncConfig")
                            << LOG_KV("enableSendBlockStatusByTree",
                                   mutableSyncParam().enableSendBlockStatusByTree);
