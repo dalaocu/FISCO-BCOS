@@ -1,7 +1,5 @@
 #------------------------------------------------------------------------------
-# define public used function
-# 
-# renames the file if it is different from its destination
+# Link libraries into main.cpp to generate executable binrary fisco-bcos
 # ------------------------------------------------------------------------------
 # This file is part of FISCO-BCOS.
 #
@@ -20,22 +18,19 @@
 #
 # (c) 2016-2018 fisco-dev contributors.
 #------------------------------------------------------------------------------
-macro(replace_if_different SOURCE DST)
-    set(extra_macro_args ${ARGN})
-    set(options CREATE)
-    set(one_value_args)
-    set(multi_value_args)
-    cmake_parse_arguments(REPLACE_IF_DIFFERENT "${options}" "${one_value_args}" "${multi_value_args}" "${extra_macro_args}")
 
-    if (REPLACE_IF_DIFFERENT_CREATE AND (NOT (EXISTS "${DST}")))
-        file(WRITE "${DST}" "")
-    endif()
+file(GLOB SRC_LIST "*.cpp")
+file(GLOB HEADERS "*.h")
 
-    execute_process(COMMAND ${CMAKE_COMMAND} -E compare_files "${SOURCE}" "${DST}" RESULT_VARIABLE DIFFERENT OUTPUT_QUIET ERROR_QUIET)
+if (TOOL)
+    add_executable(leveldb-storage storage_main.cpp)
+    target_link_libraries(leveldb-storage PUBLIC initializer)
 
-    if (DIFFERENT)
-        execute_process(COMMAND ${CMAKE_COMMAND} -E rename "${SOURCE}" "${DST}")
-    else()
-    execute_process(COMMAND ${CMAKE_COMMAND} -E remove "${SOURCE}")
-    endif()
-endmacro()
+    add_executable(binlog_reader binlog_reader.cpp)
+    target_link_libraries(binlog_reader PUBLIC initializer)
+
+    add_executable(rocksdb-storage rocksdb_main.cpp)
+    target_link_libraries(rocksdb-storage PUBLIC initializer storage)
+    add_executable(calculate_address calculate_address.cpp)
+    target_link_libraries(calculate_address PUBLIC devcrypto devcore)
+endif()

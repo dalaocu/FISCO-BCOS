@@ -18,31 +18,29 @@
  * @author: xingqiangbai
  * @date 2018-11-14
  */
+
 #include "libinitializer/Initializer.h"
-#include "libstorage/MemoryTableFactory.h"
-#include <leveldb/db.h>
-#include <libdevcore/BasicLevelDB.h>
-#include <libdevcore/Common.h>
-#include <libdevcore/easylog.h>
-#include <libstorage/LevelDBStorage.h>
+#include "libstorage/BasicRocksDB.h"
+#include "libstorage/MemoryTableFactory2.h"
+#include "libstorage/RocksDBStorage.h"
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/program_options.hpp>
-INITIALIZE_EASYLOGGINGPP
 
 using namespace std;
 using namespace dev;
 using namespace boost;
+using namespace dev::db;
 using namespace dev::storage;
 using namespace dev::initializer;
 namespace po = boost::program_options;
 
-po::options_description main_options("Main for mini-storage");
+po::options_description main_options("Main for rocksdb reader");
 
 po::variables_map initCommandLine(int argc, const char* argv[])
 {
-    main_options.add_options()("help,h", "help of mini-storage")("createTable,c",
+    main_options.add_options()("help,h", "help of rocksdb reader")("createTable,c",
         po::value<vector<string>>()->multitoken(), "[TableName] [KeyField] [ValueField]")(
         "path,p", po::value<string>()->default_value("data/"), "[LevelDB path]")(
         "select,s", po::value<vector<string>>()->multitoken(), "[TableName] [priKey]")("update,u",
@@ -80,20 +78,37 @@ void printEntries(Entries::ConstPtr entries)
 {
     if (entries->size() == 0)
     {
-        cout << "--------------Empty!--------------" << endl;
+        cout << " is empty!" << endl;
         return;
     }
-    cout << "============================" << endl;
     for (size_t i = 0; i < entries->size(); ++i)
     {
-        cout << "***************" << i << "***************" << endl;
+        cout << endl << "***" << i << " ";
         auto data = entries->get(i);
         for (auto& it : *data)
         {
-            cout << "[ " << it.first << " ]:[ " << it.second << " ]" << endl;
+            cout << "[ " << it.first << "=" << it.second << " ]";
         }
     }
-    cout << "============================" << endl;
+    cout << endl;
+}
+
+
+Storage::Ptr createRocksDBStorage(const std::string& _dbPath)
+{
+    boost::filesystem::create_directories(_dbPath);
+
+    std::shared_ptr<BasicRocksDB> rocksDB = std::make_shared<BasicRocksDB>();
+    rocksdb::Options options;
+    options.create_if_missing = true;
+    options.max_open_files = 200;
+    options.compression = rocksdb::kSnappyCompression;
+    // any exception will cause the program to be stopped
+    rocksDB->Open(options, _dbPath);
+    // create and init rocksDBStorage
+    std::shared_ptr<RocksDBStorage> rocksdbStorage = std::make_shared<RocksDBStorage>();
+    rocksdbStorage->setDB(rocksDB);
+    return rocksdbStorage;
 }
 
 int main(int argc, const char* argv[])
@@ -105,27 +120,13 @@ int main(int argc, const char* argv[])
     /// init params
     auto params = initCommandLine(argc, argv);
     auto storagePath = params["path"].as<string>();
-    cout << "LevelDB path : " << storagePath << endl;
-    filesystem::create_directories(storagePath);
-    leveldb::Options option;
-    option.create_if_missing = true;
-    option.max_open_files = 1000;
-    dev::db::BasicLevelDB* dbPtr = NULL;
-    leveldb::Status s = dev::db::BasicLevelDB::Open(option, storagePath, &dbPtr);
-    if (!s.ok())
-    {
-        cerr << "Open storage leveldb error: " << s.ToString() << endl;
-        return -1;
-    }
-
-    auto storageDB = std::shared_ptr<dev::db::BasicLevelDB>(dbPtr);
-    auto storage = std::make_shared<dev::storage::LevelDBStorage>();
-    storage->setDB(storageDB);
-    dev::storage::MemoryTableFactory::Ptr memoryTableFactory =
-        std::make_shared<dev::storage::MemoryTableFactory>();
-    memoryTableFactory->setStateStorage(storage);
-    memoryTableFactory->setBlockHash(h256(0));
-    memoryTableFactory->setBlockNum(0);
+    cout << "DB path : " << storagePath << endl;
+    auto rocksdbStorage = createRocksDBStorage(storagePath);
+    MemoryTableFactory2::Ptr tableFactory = std::make_shared<MemoryTableFactory2>();
+    tableFactory->setStateStorage(rocksdbStorage);
+    tableFactory->setBlockHash(h256(0));
+    tableFactory->setBlockNum(0);
+    tableFactory->init();
 
     if (params.count("createTable") || params.count("c"))
     {
@@ -133,14 +134,14 @@ int main(int argc, const char* argv[])
         cout << "createTable " << p << " || params num : " << p.size() << endl;
         if (p.size() == 3u)
         {
-            auto table = memoryTableFactory->createTable(p[0], p[1], p[2], true);
+            auto table = tableFactory->createTable(p[0], p[1], p[2], true);
             if (table)
             {
                 cout << "KeyField:[" << p[1] << "]" << endl;
                 cout << "ValueField:[" << p[2] << "]" << endl;
                 cout << "createTable [" << p[0] << "] success!" << endl;
             }
-            memoryTableFactory->commitDB(h256(0), 1);
+            tableFactory->commitDB(h256(0), 1);
             return 0;
         }
     }
@@ -150,14 +151,13 @@ int main(int argc, const char* argv[])
         cout << "select " << p << " || params num : " << p.size() << endl;
         if (p.size() == 2u)
         {
-            auto table = memoryTableFactory->openTable(p[0]);
+            auto table = tableFactory->openTable(p[0]);
             if (table)
             {
-                cout << "open Table [" << p[0] << "] success!" << endl;
+                cout << "================ open Table [" << p[0] << "] success! key " << p[1];
                 auto entries = table->select(p[1], table->newCondition());
                 printEntries(entries);
             }
-            // memoryTableFactory->commitDB(h256(0), 1);
             return 0;
         }
     }
@@ -167,15 +167,15 @@ int main(int argc, const char* argv[])
         cout << "update " << p << " || params num : " << p.size() << endl;
         if (p.size() == 4u)
         {
-            auto table = memoryTableFactory->openTable(p[0]);
+            auto table = tableFactory->openTable(p[0]);
             if (table)
             {
                 cout << "open Table [" << p[0] << "] success!" << endl;
                 auto entry = table->newEntry();
                 entry->setField(p[2], p[3]);
                 table->update(p[1], entry, table->newCondition());
+                tableFactory->commitDB(h256(0), 1);
             }
-            memoryTableFactory->commitDB(h256(0), 1);
             return 0;
         }
     }
@@ -185,7 +185,7 @@ int main(int argc, const char* argv[])
         cout << "insert " << p << " || params num : " << p.size() << endl;
         if (p.size() == 3u)
         {
-            auto table = memoryTableFactory->openTable(p[0]);
+            auto table = tableFactory->openTable(p[0]);
             if (table)
             {
                 cout << "open Table [" << p[0] << "] success!" << endl;
@@ -199,8 +199,8 @@ int main(int argc, const char* argv[])
                     entry->setField(KV[0], KV[1]);
                 }
                 table->insert(p[1], entry);
+                tableFactory->commitDB(h256(0), 1);
             }
-            memoryTableFactory->commitDB(h256(0), 1);
             return 0;
         }
     }
@@ -210,13 +210,13 @@ int main(int argc, const char* argv[])
         cout << "remove " << p << " || params num : " << p.size() << endl;
         if (p.size() == 2u)
         {
-            auto table = memoryTableFactory->openTable(p[0]);
+            auto table = tableFactory->openTable(p[0]);
             if (table)
             {
                 cout << "open Table [" << p[0] << "] success!" << endl;
                 table->remove(p[1], table->newCondition());
+                tableFactory->commitDB(h256(0), 1);
             }
-            memoryTableFactory->commitDB(h256(0), 1);
             return 0;
         }
     }

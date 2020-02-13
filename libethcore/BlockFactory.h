@@ -1,4 +1,4 @@
-/**
+/*
  * @CopyRight:
  * FISCO-BCOS is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -12,21 +12,39 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with FISCO-BCOS.  If not, see <http://www.gnu.org/licenses/>
- * (c) 2016-2018 fisco-dev contributors.
- *
- * @brief: class to handle exit
- *
- * @file: ExitHandler.h
- * @author: yujiechen
- * @date 2018-11-07
+ * (c) 2016-2019 fisco-dev contributors.
  */
-#pragma once
-#include "libconfig/GlobalConfigure.h"
 
-class ExitHandler
+/**
+ * @brief block factory
+ * @author: yujiechen
+ * @date: 2019-11-12
+ */
+
+#pragma once
+#include "Block.h"
+#include "PartiallyBlock.h"
+
+namespace dev
+{
+namespace eth
+{
+class BlockFactory
 {
 public:
-    void exit() { exitHandler(0); }
-    static void exitHandler(int) { dev::g_BCOSConfig.shouldExit.store(true); }
-    bool shouldExit() const { return dev::g_BCOSConfig.shouldExit.load(); }
+    using Ptr = std::shared_ptr<BlockFactory>;
+    BlockFactory() = default;
+    virtual ~BlockFactory() {}
+    virtual Block::Ptr createBlock() { return std::make_shared<Block>(); }
 };
+
+class PartiallyBlockFactory : public BlockFactory
+{
+public:
+    PartiallyBlockFactory() = default;
+    ~PartiallyBlockFactory() override {}
+    Block::Ptr createBlock() override { return std::make_shared<PartiallyBlock>(); }
+};
+
+}  // namespace eth
+}  // namespace dev

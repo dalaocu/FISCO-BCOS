@@ -24,7 +24,7 @@
  */
 
 #pragma once
-#include "easylog.h"
+#include "Log.h"
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 #include <boost/thread/thread.hpp>
@@ -58,6 +58,7 @@ public:
             _workers.join_all();
         }
     }
+
     ~ThreadPool() { stop(); }
 
     // Add new work item to the pool.

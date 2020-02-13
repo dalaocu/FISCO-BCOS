@@ -130,6 +130,21 @@ public:
             jsonrpc::Procedure("getTotalTransactionCount", jsonrpc::PARAMS_BY_POSITION,
                 jsonrpc::JSON_OBJECT, "param1", jsonrpc::JSON_INTEGER, NULL),
             &dev::rpc::RpcFace::getTotalTransactionCountI);
+
+        // used in dev and test, directly submit the transactions.
+        this->bindAndAddMethod(jsonrpc::Procedure("submitTransactions", jsonrpc::PARAMS_BY_POSITION,
+                                   jsonrpc::JSON_OBJECT, "param1", jsonrpc::JSON_INTEGER, "param2",
+                                   jsonrpc::JSON_STRING, NULL),
+            &dev::rpc::RpcFace::submitTransactionsI);
+        this->bindAndAddMethod(jsonrpc::Procedure("getTransactionByHashWithProof",
+                                   jsonrpc::PARAMS_BY_POSITION, jsonrpc::JSON_OBJECT, "param1",
+                                   jsonrpc::JSON_INTEGER, "param2", jsonrpc::JSON_STRING, NULL),
+            &dev::rpc::RpcFace::getTransactionByHashWithProofI);
+
+        this->bindAndAddMethod(jsonrpc::Procedure("getTransactionReceiptByHashWithProof",
+                                   jsonrpc::PARAMS_BY_POSITION, jsonrpc::JSON_OBJECT, "param1",
+                                   jsonrpc::JSON_INTEGER, "param2", jsonrpc::JSON_STRING, NULL),
+            &dev::rpc::RpcFace::getTransactionReceiptByHashWithProofI);
     }
 
     inline virtual void getSystemConfigByKeyI(const Json::Value& request, Json::Value& response)
@@ -250,6 +265,26 @@ public:
         response = this->sendRawTransaction(
             boost::lexical_cast<int>(request[0u].asString()), request[1u].asString());
     }
+    inline virtual void submitTransactionsI(const Json::Value& request, Json::Value& response)
+    {
+        response = this->submitTransactions(
+            boost::lexical_cast<int>(request[0u].asString()), request[1u].asString());
+    }
+
+    inline virtual void getTransactionByHashWithProofI(
+        const Json::Value& request, Json::Value& response)
+    {
+        response = this->getTransactionByHashWithProof(
+            boost::lexical_cast<int>(request[0u].asString()), request[1u].asString());
+    }
+
+
+    inline virtual void getTransactionReceiptByHashWithProofI(
+        const Json::Value& request, Json::Value& response)
+    {
+        response = this->getTransactionReceiptByHashWithProof(
+            boost::lexical_cast<int>(request[0u].asString()), request[1u].asString());
+    }
 
     // system config part
     virtual std::string getSystemConfigByKey(int param1, const std::string& param2) = 0;
@@ -300,6 +335,12 @@ public:
     virtual Json::Value call(int param1, const Json::Value& param2) = 0;
     /// Creates new message call transaction or a contract creation for signed transactions.
     virtual std::string sendRawTransaction(int param1, const std::string& param2) = 0;
+    virtual Json::Value submitTransactions(int param1, const std::string& param2) = 0;
+    // Get merkle transaction with proof by hash
+    virtual Json::Value getTransactionByHashWithProof(int param1, const std::string& param2) = 0;
+    // Get receipt with merkle proof by hash
+    virtual Json::Value getTransactionReceiptByHashWithProof(
+        int param1, const std::string& param2) = 0;
 };
 
 }  // namespace rpc

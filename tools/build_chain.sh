@@ -15,10 +15,12 @@ output_dir=nodes
 port_start=(30300 20200 8545)
 state_type=storage 
 storage_type=rocksdb
+supported_storage=(rocksdb mysql external scalable)
 conf_path="conf"
 bin_path=
 make_tar=
 debug_log="false"
+binary_log="false"
 log_level="info"
 logfile=${PWD}/build.log
 listen_ip="127.0.0.1"
@@ -35,10 +37,10 @@ auto_flush="true"
 timestamp=$(($(date '+%s')*1000))
 chain_id=1
 compatibility_version=""
-default_version="2.1.0"
+default_version="2.2.0"
 macOS=""
 x86_64_arch="true"
-download_timeout=60
+download_timeout=240
 cdn_link_header="https://www.fisco.com.cn/cdn/fisco-bcos/releases/download"
 
 help() {
@@ -52,7 +54,7 @@ Usage:
     -p <Start Port>                     Default 30300,20200,8545 means p2p_port start from 30300, channel_port from 20200, jsonrpc_port from 8545
     -i <Host ip>                        Default 127.0.0.1. If set -i, listen 0.0.0.0
     -v <FISCO-BCOS binary version>      Default get version from https://github.com/FISCO-BCOS/FISCO-BCOS/releases. If set use specificd version binary
-    -s <DB type>                        Default rocksdb. Options can be rocksdb / mysql / external, rocksdb is recommended
+    -s <DB type>                        Default rocksdb. Options can be rocksdb / mysql / external / scalable, rocksdb is recommended
     -d <docker mode>                    Default off. If set -d, build with docker
     -c <Consensus Algorithm>            Default PBFT. If set -c, use Raft
     -m <MPT State type>                 Default storageState. if set -m, use mpt state
@@ -127,8 +129,8 @@ while getopts "f:l:o:p:e:t:v:s:C:iczhgmTFd" option;do
     e) bin_path=$OPTARG;;
     m) state_type=mpt;;
     s) storage_type=$OPTARG
-        if [ -z "${storage_type}" ];then
-            LOG_WARN "${storage_type} is not supported storage."
+        if ! echo "${supported_storage[*]}" | grep -i "${storage_type}" &>/dev/null; then
+            LOG_WARN "${storage_type} is not supported. Please set one of ${supported_storage[*]}"
             exit 1;
         fi
     ;;
@@ -152,6 +154,10 @@ while getopts "f:l:o:p:e:t:v:s:C:iczhgmTFd" option;do
     h) help;;
     esac
 done
+if [ "${storage_type}" == "scalable" ]; then
+    echo "use scalable storage, so turn on binary log"
+    binary_log="true"
+fi
 }
 
 print_result()
@@ -382,9 +388,6 @@ gen_node_cert_with_extensions_gm() {
 }
 
 gen_node_cert_gm() {
-    if [ "" = "$(openssl ecparam -list_curves 2>&1 | grep secp256k1)" ]; then
-        exit_with_clean "openssl don't support secp256k1, please upgrade openssl!"
-    fi
 
     agpath="${1}"
     agency=$(basename "$agpath")
@@ -435,6 +438,7 @@ generate_config_ini()
     listen_ip=0.0.0.0
     listen_port=$(( offset + port_start[0] ))
     ;enable_compress=true
+    ;enable_statistic=false
     ; nodes to connect
     $ip_list
 
@@ -518,9 +522,17 @@ function generate_group_ini()
     ; min block generation time(ms), the max block generation time is 1000 ms
     ;min_block_generation_time=500
     ;enable_dynamic_block_size=true
+    ;enable_ttl_optimization=true
+    ;enable_prepare_with_txsHash=true
 [storage]
-    ; storage db type, rocksdb / mysql / external, rocksdb is recommended
+    ; storage db type, rocksdb / mysql / external / scalable, rocksdb is recommended
     type=${storage_type}
+    ; set true to turn on binary log
+    binary_log=${binary_log}
+    ; scroll_threshold=scroll_threshold_multiple*1000, only for scalable
+    scroll_threshold_multiple=2
+    ; set fasle to disable CachedStorage
+    cached_storage=true
     ; max cache memeory, MB
     max_capacity=32
     max_forward_block=10
@@ -537,6 +549,15 @@ function generate_group_ini()
     limit=150000
 [tx_execute]
     enable_parallel=${enable_parallel}
+[sync]
+    idle_wait_ms=200
+    ; send block status and transaction by tree-topology
+    ; only supported when use pbft
+    sync_by_tree=true
+    ; must between 1000 to 3000
+    ; only enabled when sync_by_tree is true
+    gossip_interval_ms=1000
+    gossip_peers_number=3
 EOF
 }
 
@@ -1010,6 +1031,9 @@ download_bin()
     else
         curl -LO ${Download_Link}
     fi
+    if [[ $(ls -al . | grep tar.gz | awk '{print $5}') < 1048576 ]];then 
+        exit_with_clean "Download fisco-bcos failed, please try again. Or download and extract it manually from ${Download_Link} and use -e option."
+    fi
     tar -zxf ${package_name} && mv fisco-bcos ${bin_path} && rm ${package_name}
     chmod a+x ${bin_path}
 }
@@ -1175,20 +1199,14 @@ for line in ${ip_array[*]};do
             #move origin conf to gm conf
             rm ${node_dir}/${conf_path}/node.nodeid
             cp ${node_dir}/${conf_path} ${node_dir}/${gm_conf_path}/origin_cert -r
-        fi
-
-        if [ -n "$guomi_mode" ]; then
             nodeid="$(cat ${node_dir}/${gm_conf_path}/gmnode.nodeid)"
-        else
-            nodeid="$(cat ${node_dir}/${conf_path}/node.nodeid)"
-        fi
-
-        if [ -n "$guomi_mode" ]; then
             #remove original cert files
             rm ${node_dir:?}/${conf_path} -rf
             mv ${node_dir}/${gm_conf_path} ${node_dir}/${conf_path}
-        fi
 
+        else
+            nodeid="$(cat ${node_dir}/${conf_path}/node.nodeid)"
+        fi
 
         if [ "${use_ip_param}" == "false" ];then
             node_groups=(${group_array[server_count]//,/ })

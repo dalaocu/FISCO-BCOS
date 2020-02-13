@@ -78,10 +78,6 @@ vector<dev::GROUP_ID> LedgerInitializer::initLedgers()
                     BOOST_THROW_EXCEPTION(InitLedgerConfigFailed());
                     return false;
                 }
-                h512s sealerList = m_ledgerManager->getParamByGroupId(_groupID)
-                                       ->mutableConsensusParam()
-                                       .sealerList;
-                m_p2pService->setNodeListByGroupID(_groupID, sealerList);
                 LOG(INFO) << LOG_BADGE("LedgerInitializer init group succ")
                           << LOG_KV("groupID", _groupID);
                 return true;
@@ -158,11 +154,12 @@ bool LedgerInitializer::initLedger(
                                << std::to_string(_groupId);
         return false;
     }
-    std::shared_ptr<LedgerInterface> ledger =
-        std::make_shared<Ledger>(m_p2pService, _groupId, m_keyPair, _dataDir);
     INITIALIZER_LOG(INFO) << "[initSingleLedger] [GroupId]:  " << std::to_string(_groupId);
+    auto ledger = std::make_shared<Ledger>(m_p2pService, _groupId, m_keyPair);
     ledger->setChannelRPCServer(m_channelRPCServer);
-    bool succ = ledger->initLedger(_configFileName);
+    auto ledgerParams = std::make_shared<LedgerParam>();
+    ledgerParams->init(_configFileName, _dataDir);
+    bool succ = ledger->initLedger(ledgerParams);
     if (!succ)
         return false;
     m_ledgerManager->insertLedger(_groupId, ledger);
